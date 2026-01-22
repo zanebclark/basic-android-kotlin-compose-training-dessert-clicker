@@ -20,6 +20,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -52,10 +53,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -67,14 +68,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.content.ContextCompat
-import com.example.dessertclicker.data.Datasource
 import com.example.dessertclicker.model.Dessert
+import com.example.dessertclicker.model.DessertViewModel
 import com.example.dessertclicker.ui.theme.DessertClickerTheme
+import androidx.lifecycle.viewmodel.compose.viewModel
+
+// Tag for logging
+private const val TAG = "MainActivity"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        Log.d(TAG, "onCreate Called")
         setContent {
             DessertClickerTheme {
                 // A surface container using the 'background' color from the theme
@@ -83,45 +89,52 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .statusBarsPadding(),
                 ) {
-                    DessertClickerApp(desserts = Datasource.dessertList)
+                    DessertClickerApp()
                 }
             }
         }
     }
-}
 
-/**
- * Determine which dessert to show.
- */
-fun determineDessertToShow(
-    desserts: List<Dessert>,
-    dessertsSold: Int
-): Dessert {
-    var dessertToShow = desserts.first()
-    for (dessert in desserts) {
-        if (dessertsSold >= dessert.startProductionAmount) {
-            dessertToShow = dessert
-        } else {
-            // The list of desserts is sorted by startProductionAmount. As you sell more desserts,
-            // you'll start producing more expensive desserts as determined by startProductionAmount
-            // We know to break as soon as we see a dessert who's "startProductionAmount" is greater
-            // than the amount sold.
-            break
-        }
+    override fun onStart() {
+        super.onStart()
+        Log.d(TAG, "onStart Called")
     }
 
-    return dessertToShow
+    override fun onResume() {
+        super.onResume()
+        Log.d(TAG, "onResume Called")
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        Log.d(TAG, "onRestart Called")
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Log.d(TAG, "onPause Called")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.d(TAG, "onStop Called")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(TAG, "onDestroy Called")
+    }
 }
 
 /**
  * Share desserts sold information using ACTION_SEND intent
  */
-private fun shareSoldDessertsInformation(intentContext: Context, dessertsSold: Int, revenue: Int) {
+private fun shareSoldDessertsInformation(intentContext: Context, quantitySold: Int, totalRevenue: Int) {
     val sendIntent = Intent().apply {
         action = Intent.ACTION_SEND
         putExtra(
             Intent.EXTRA_TEXT,
-            intentContext.getString(R.string.share_text, dessertsSold, revenue)
+            intentContext.getString(R.string.share_text, quantitySold, totalRevenue)
         )
         type = "text/plain"
     }
@@ -141,20 +154,9 @@ private fun shareSoldDessertsInformation(intentContext: Context, dessertsSold: I
 
 @Composable
 private fun DessertClickerApp(
-    desserts: List<Dessert>
+    dessertViewModel: DessertViewModel = viewModel(factory = DessertViewModel.Factory)
 ) {
-
-    var revenue by remember { mutableStateOf(0) }
-    var dessertsSold by remember { mutableStateOf(0) }
-
-    val currentDessertIndex by remember { mutableStateOf(0) }
-
-    var currentDessertPrice by remember {
-        mutableStateOf(desserts[currentDessertIndex].price)
-    }
-    var currentDessertImageId by remember {
-        mutableStateOf(desserts[currentDessertIndex].imageId)
-    }
+    val uiState by dessertViewModel.uiState.collectAsState()
 
     Scaffold(
         topBar = {
@@ -164,8 +166,8 @@ private fun DessertClickerApp(
                 onShareButtonClicked = {
                     shareSoldDessertsInformation(
                         intentContext = intentContext,
-                        dessertsSold = dessertsSold,
-                        revenue = revenue
+                        quantitySold = uiState.quantitySold,
+                        totalRevenue = uiState.totalRevenue
                     )
                 },
                 modifier = Modifier
@@ -180,21 +182,12 @@ private fun DessertClickerApp(
             )
         }
     ) { contentPadding ->
+
         DessertClickerScreen(
-            revenue = revenue,
-            dessertsSold = dessertsSold,
-            dessertImageId = currentDessertImageId,
-            onDessertClicked = {
-
-                // Update the revenue
-                revenue += currentDessertPrice
-                dessertsSold++
-
-                // Show the next dessert
-                val dessertToShow = determineDessertToShow(desserts, dessertsSold)
-                currentDessertImageId = dessertToShow.imageId
-                currentDessertPrice = dessertToShow.price
-            },
+            totalRevenue = uiState.totalRevenue,
+            quantitySold = uiState.quantitySold,
+            dessertImageId = uiState.currentDessert.imageId,
+            onDessertClicked = { dessertViewModel.onDessertClicked() },
             modifier = Modifier.padding(contentPadding)
         )
     }
@@ -231,8 +224,8 @@ private fun DessertClickerAppBar(
 
 @Composable
 fun DessertClickerScreen(
-    revenue: Int,
-    dessertsSold: Int,
+    totalRevenue: Int,
+    quantitySold: Int,
     @DrawableRes dessertImageId: Int,
     onDessertClicked: () -> Unit,
     modifier: Modifier = Modifier
@@ -261,8 +254,8 @@ fun DessertClickerScreen(
                 )
             }
             TransactionInfo(
-                revenue = revenue,
-                dessertsSold = dessertsSold,
+                revenue = totalRevenue,
+                dessertsSold = quantitySold,
                 modifier = Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
             )
         }
@@ -334,6 +327,6 @@ private fun DessertsSoldInfo(dessertsSold: Int, modifier: Modifier = Modifier) {
 @Composable
 fun MyDessertClickerAppPreview() {
     DessertClickerTheme {
-        DessertClickerApp(listOf(Dessert(R.drawable.cupcake, 5, 0)))
+        DessertClickerApp()
     }
 }
